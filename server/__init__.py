@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import logging
 import sys
-import typing as T
+import typing
 
 import asyncpg
 
@@ -27,13 +27,17 @@ async def safe_send_message(ws: WebSocketClientProtocol, message: str) -> None:
 
 
 class Handler:
-
-    async def safe_send_message(self, ws: WebSocketClientProtocol, message: str) -> None:
+    async def safe_send_message(
+        self, ws: WebSocketClientProtocol, message: str
+    ) -> None:
 
         try:
             await ws.send(message)
         except Exception:
-            logging.exception("Got an exception while sending message to %s, removed from clients set.", ws)
+            logging.exception(
+                "Got an exception while sending message to %s, removed from clients set.",
+                ws,
+            )
             if ws in self.clients:
                 self.clients.remove(ws)
 
@@ -42,7 +46,9 @@ class Handler:
         logging.info(f"{ws.remote_address} connected, connections: {len(self.clients)}")
 
     async def broadcast(self, message: str) -> None:
-        await asyncio.gather(*[self.safe_send_message(c, message) for c in self.clients])
+        await asyncio.gather(
+            *[self.safe_send_message(c, message) for c in self.clients]
+        )
 
     async def ws_handler(self, ws: WebSocketClientProtocol, path: str):
         await self.register(ws)
@@ -62,10 +68,10 @@ class Handler:
         pg_channel: str,
     ):
 
-        self.clients: T.Set[WebSocketClientProtocol] = set()
+        self.clients: typing.Set[WebSocketClientProtocol] = set()
 
         self.pg_channel: str = pg_channel
-        self.pg_connection: T.Optional[asyncpg.Connection] = None
+        self.pg_connection: typing.Optional[asyncpg.Connection] = None
         self.pg_events: asyncio.Queue[str] = asyncio.Queue()
 
         self.setup_task = asyncio.create_task(self.async_init())

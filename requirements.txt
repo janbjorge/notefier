@@ -1,4 +1,2 @@
 asyncpg
-black
-mypy
 websockets
