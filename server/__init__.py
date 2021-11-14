@@ -136,7 +136,3 @@ def main() -> None:
 
     opts = parser.parse_args()
     asyncio.run(run(channel=opts.channel, host=opts.host, port=opts.port))
-
-
-if __name__ == "__main__":
-    main()

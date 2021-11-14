@@ -1,2 +1,2 @@
-asyncpg
-websockets
+asyncpg==0.24.0
+websockets==10.0
