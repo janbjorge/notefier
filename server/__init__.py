@@ -128,7 +128,7 @@ def main() -> None:
         "--host",
         type=str,
         help="The network interfaces the server is bound to.",
-        default="localhost",
+        default="0.0.0.0",
     )
     parser.add_argument(
         "--port", type=int, help="TCP port the server listens on.", default=4000

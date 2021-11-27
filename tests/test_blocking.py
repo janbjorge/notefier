@@ -2,19 +2,22 @@ import asyncio
 import datetime
 import time
 
-import core
+
+from core import (
+    blocking,
+)
 
 
-@core.cache("ws://localhost:4000", predicate=bool)
+@blocking.cache("ws://localhost:4000", predicate=bool)
 def slow():
     time.sleep(1)
     return datetime.datetime.now()
 
 
-async def main():
+def main():
     for _ in range(1_000_000):
         print(slow())
-        await asyncio.sleep(0.1)
+        time.sleep(0.25)
 
 
 if __name__ == "__main__":
