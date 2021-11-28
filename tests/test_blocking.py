@@ -1,24 +1,27 @@
-import asyncio
 import datetime
 import time
 
 
 from core import (
-    blocking,
+    cache,
+    strategies,
 )
 
 
-@blocking.cache("ws://localhost:4000", predicate=bool)
+@cache(
+    strategies.Threaded(
+        "ws://localhost:4000", predicate=lambda e: e.operation == "insert"
+    )
+)
 def slow():
-    time.sleep(1)
     return datetime.datetime.now()
 
 
 def main():
-    for _ in range(1_000_000):
+    while True:
         print(slow())
-        time.sleep(0.25)
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

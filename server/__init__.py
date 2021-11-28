@@ -13,7 +13,15 @@ from websockets.client import (
     WebSocketClientProtocol,
 )
 from websockets import (
+    exceptions as ws_exceptions,
     server,
+)
+
+
+# Due to lazy imports in the websockets module we have to import using `the real import path`.
+# Ref.: https://websockets.readthedocs.io/en/stable/changelog.html?highlight=mypy#id5
+from websockets.client import (
+    connect as ws_connect,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +41,9 @@ class Handler:
 
         try:
             await ws.send(message)
+        except ws_exceptions.ConnectionClosedError:
+            if ws in self.clients:
+                self.clients.remove(ws)
         except Exception:
             logging.exception(
                 "Got an exception while sending message to %s, removed from clients set.",
