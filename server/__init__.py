@@ -24,48 +24,50 @@ from websockets.client import (
     connect as ws_connect,
 )
 
-logging.basicConfig(level=logging.INFO)
-
-
-async def safe_send_message(ws: WebSocketClientProtocol, message: str) -> None:
-    try:
-        await ws.send(message)
-    except Exception:
-        logging.exception("Got an exception while sending...")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 
 class Handler:
-    async def safe_send_message(
-        self, ws: WebSocketClientProtocol, message: str
-    ) -> None:
+    async def send_message(self, ws: WebSocketClientProtocol, message: str) -> None:
 
         try:
             await ws.send(message)
         except ws_exceptions.ConnectionClosedError:
-            if ws in self.clients:
-                self.clients.remove(ws)
+            self.unregister(ws)
         except Exception:
             logging.exception(
                 "Got an exception while sending message to %s, removed from clients set.",
                 ws,
             )
-            if ws in self.clients:
-                self.clients.remove(ws)
+            self.unregister(ws)
 
-    async def register(self, ws: WebSocketClientProtocol) -> None:
+    def register(self, ws: WebSocketClientProtocol) -> None:
         self.clients.add(ws)
         logging.info(f"{ws.remote_address} connected, connections: {len(self.clients)}")
 
-    async def broadcast(self, message: str) -> None:
-        await asyncio.gather(
-            *[self.safe_send_message(c, message) for c in self.clients]
-        )
+    def unregister(self, ws: WebSocketClientProtocol) -> None:
+        logging.info("......., unregister")
+        if ws in self.clients:
+            self.clients.remove(ws)
 
-    async def ws_handler(self, ws: WebSocketClientProtocol, path: str):
-        await self.register(ws)
+    async def broadcast(self, message: str) -> None:
+        await asyncio.gather(*[self.send_message(c, message) for c in self.clients])
+
+    async def ws_handler(
+        self,
+        ws: WebSocketClientProtocol,
+        path: str,
+    ):
+        self.register(ws)
 
         # This just looks wrong on so many levels....
-        await suspend_forever()
+        try:
+            await suspend_forever()
+        finally:
+            self.unregister(ws)
 
     async def emitter(self):
         while True:
@@ -95,6 +97,7 @@ class Handler:
         channel: str,
         payload: str,
     ):
+        logging.info("channel: %s, payload: %s", channel, payload)
         if channel == self.pg_channel:
             self.pg_events.put_nowait(payload)
 
@@ -123,7 +126,7 @@ async def suspend_forever() -> None:
 
 async def run(channel: str, host: str, port: int) -> None:
     h = Handler(channel)
-    await server.serve(h.ws_handler, host, port)
+    await server.serve(h.ws_handler, host=host, port=port)
     await suspend_forever()
 
 
@@ -142,7 +145,10 @@ def main() -> None:
         default="0.0.0.0",
     )
     parser.add_argument(
-        "--port", type=int, help="TCP port the server listens on.", default=4000
+        "--port",
+        type=int,
+        help="TCP port the server listens on.",
+        default=4000,
     )
 
     opts = parser.parse_args()

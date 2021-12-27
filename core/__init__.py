@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import collections
 import functools
 import json
 import logging
@@ -9,30 +10,60 @@ import asyncpg
 
 from core import (
     strategies,
+    utils,
 )
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 
 def cache(
     strategy: strategies.Strategy,
+    maxsize: typing.Optional[int] = 128,
 ):
     def outer(fn):
 
-        cached = functools.cache(fn)
+        if maxsize is not None and maxsize < 1:
+            raise ValueError("The maxsize must be a positive number, greather than 1.")
 
+        # cached = collections.OrderedDict()
+        cached = dict()
+
+        @functools.wraps(fn)
         def inner(*args, **kw):
-
             # Clear cache if we have some event from
             # database
-            if strategy.cache_clear():
-                cached.cache_clear()
+            key = utils.make_key(args, kw)
 
-            return cached(*args, **kw)
+            if strategy.clear() and key in cached:
+                print("clear")
+                cached.pop(key, None)
 
-        inner.cache_clear = cached.cache_clear
-        inner.cache_info = cached.cache_info
-        inner.strategy = strategy
+            # if maxsize is not None and len(cached) > maxsize:
+            #     logging.info("maxsize")
+            #     cached.popitem(last=True)
+
+            # Use cached value if we got one.
+            if key not in cached:
+                print("miss")
+                rv = cached[key] = fn(*args, **kw)
+            else:
+                # print("hit")
+                rv = cached[key]
+            return rv
+            # if key in cached:
+            #     # logging.info("hit")
+            #     return cached[key]
+            #     # # Move item to top of lru-cache "stack".
+            #     # if maxsize is not None:
+            #     #     logging.info("lru-rotate")
+            #     #     rv = cached.pop(key)
+            #     #     cached[key] = rv
+            #     # return rv
+
+            # return rv
 
         return inner
 
@@ -84,7 +115,11 @@ def main() -> None:
         help="Any other data that you would like to attach to the",
     )
     parser.add_argument(
-        "--repeat", "-r", type=int, help="Repeat the given message N times", default=1
+        "--repeat",
+        "-r",
+        type=int,
+        help="Repeat the given message N times",
+        default=1,
     )
     opts = parser.parse_args()
     asyncio.run(

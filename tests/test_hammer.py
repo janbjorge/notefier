@@ -11,19 +11,29 @@ from core import (
 )
 
 
-def work(until: datetime.timedelta = datetime.timedelta(seconds=10)):
-
-    strategy = strategies.Threaded(
-        uri="ws://localhost:4000",
-        predicate=lambda e: e.operation == "insert",
+def work(until: datetime.timedelta = datetime.timedelta(seconds=5)):
+    @cache(
+        strategy=strategies.Predicate(
+            uri="ws://0.0.0.0:4000",
+            fn=lambda e: e.operation == "insert",
+        )
     )
-
-    @cache(strategy=strategy)
-    def slow():
+    def slow1():
         return datetime.datetime.now()
 
-    while datetime.datetime.now() - slow() < until:
-        time.sleep(0.01)
+    @cache(
+        strategy=strategies.Predicate(
+            uri="ws://0.0.0.0:4000",
+            fn=lambda e: e.operation == "insert",
+        )
+    )
+    def slow2():
+        return datetime.datetime.now()
+
+    while (
+        datetime.datetime.now() - slow1() < until and
+        datetime.datetime.now() - slow2() < until):
+        time.sleep(0.001)
 
 
 def test():

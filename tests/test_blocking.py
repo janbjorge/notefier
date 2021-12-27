@@ -3,14 +3,15 @@ import time
 
 
 from core import (
-    cache,
     strategies,
+    cache,
 )
 
 
 @cache(
-    strategies.Threaded(
-        "ws://localhost:4000", predicate=lambda e: e.operation == "insert"
+    strategies.Predicate(
+        "ws://localhost:4000",
+        fn=lambda e: e.operation == "insert",
     )
 )
 def slow():
