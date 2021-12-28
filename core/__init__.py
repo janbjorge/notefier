@@ -4,11 +4,15 @@ import collections
 import functools
 import json
 import logging
+import queue
 import typing
+
+from collections.abc import Mapping
 
 import asyncpg
 
 from core import (
+    listeners,
     strategies,
     utils,
 )
@@ -28,8 +32,8 @@ def cache(
         if maxsize is not None and maxsize < 1:
             raise ValueError("The maxsize must be a positive number, greather than 1.")
 
-        # cached = collections.OrderedDict()
-        cached = dict()
+        cached = collections.OrderedDict()
+        miss = object()
 
         @functools.wraps(fn)
         def inner(*args, **kw):
@@ -37,55 +41,80 @@ def cache(
             # database
             key = utils.make_key(args, kw)
 
-            if strategy.clear() and key in cached:
-                print("clear")
+            if strategy.clear():
                 cached.pop(key, None)
 
-            # if maxsize is not None and len(cached) > maxsize:
-            #     logging.info("maxsize")
-            #     cached.popitem(last=True)
+            # Check if we have a cached value, if not we use `cache_miss`
+            # to singal a cache-miss.
+            rv = cached.pop(key, miss)
 
-            # Use cached value if we got one.
-            if key not in cached:
-                print("miss")
-                rv = cached[key] = fn(*args, **kw)
-            else:
-                # print("hit")
-                rv = cached[key]
+            if rv is miss:
+                rv = fn(*args, **kw)
+                if maxsize is not None and len(cached) > maxsize:
+                    cached.popitem(last=True)
+
+            # cache + LRU-rotation
+            cached[key] = rv
+
             return rv
-            # if key in cached:
-            #     # logging.info("hit")
-            #     return cached[key]
-            #     # # Move item to top of lru-cache "stack".
-            #     # if maxsize is not None:
-            #     #     logging.info("lru-rotate")
-            #     #     rv = cached.pop(key)
-            #     #     cached[key] = rv
-            #     # return rv
-
-            # return rv
 
         return inner
 
     return outer
 
 
+class KV(Mapping):
+    def __init__(self, uri):
+        self._listener = listeners.Threaded(uri)
+        self._kv = dict()
+
+    def _update(self):
+        while True:
+
+            try:
+                e = self._listener.queue.get_nowait()
+            except queue.Empty:
+                break
+
+            try:
+                kv = json.loads(e.payload)
+            except json.decoder.JSONDecodeError:
+                logging.exception("Unable to load %s", e.payload)
+                continue
+
+            try:
+                if e.operation == "insert" or e.operation == "update":
+                    self._kv[kv["key"]] = kv["value"]
+                elif e.operation == "delete":
+                    self._kv.pop(kv["key"], None)
+            except Exception:
+                logging.exception(
+                    "Unable to update KV, Illformed payload, must have key/value: %s",
+                    kv,
+                )
+
+    def __getitem__(self, key):
+        self._update()
+        return self._kv[key]
+
+    def __iter__(self):
+        self._update()
+        return self._kv.__iter__()
+
+    def __len__(self) -> int:
+        self._update()
+        return self._kv.__len__()
+
+
 async def emit(
     channel: str,
     operation: str,
-    extra: typing.Optional[typing.Any],
-    repeat: int,
+    payload: typing.Any,
 ) -> None:
-    payload = json.dumps(
-        {
-            "operation": operation,
-            "extra": extra,
-        }
-    )
+    payload = json.dumps({"operation": operation, "payload": payload})
     connection: asyncpg.Connection = await asyncpg.connect()
     try:
-        for _ in range(repeat):
-            await connection.fetch("SELECT pg_notify($1, $2)", channel, payload)
+        await connection.fetch("SELECT pg_notify($1, $2)", channel, payload)
     except Exception:
         logging.exception("Was unable to emit %s to %s", payload, channel)
     finally:
@@ -109,24 +138,10 @@ def main() -> None:
         required=True,
     )
     parser.add_argument(
-        "--extra",
-        "-e",
+        "--payload",
+        "-p",
         default=None,
-        help="Any other data that you would like to attach to the",
-    )
-    parser.add_argument(
-        "--repeat",
-        "-r",
-        type=int,
-        help="Repeat the given message N times",
-        default=1,
+        help="A payload that you would like to attach to the operation.",
     )
     opts = parser.parse_args()
-    asyncio.run(
-        emit(
-            opts.channel,
-            opts.operation,
-            opts.extra,
-            opts.repeat,
-        )
-    )
+    asyncio.run(emit(opts.channel, opts.operation, opts.payload))

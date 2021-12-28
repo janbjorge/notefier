@@ -15,7 +15,6 @@ from . import (
     models,
 )
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -25,11 +24,9 @@ logging.basicConfig(
 class Threaded:
 
     _BACKGROUND_LISTENER: typing.Optional[threading.Thread] = None
-    _QUEUES: typing.List[queue.Queue] = []
+    _QUEUES: typing.List[queue.Queue[models.Event]] = []
 
     def __init__(self, uri: str):
-
-        self.queue: queue.Queue[models.Event] = queue.Queue()
 
         if Threaded._BACKGROUND_LISTENER is None:
             Threaded._BACKGROUND_LISTENER = threading.Thread(
@@ -42,11 +39,14 @@ class Threaded:
             )
             Threaded._BACKGROUND_LISTENER.start()
 
+        self.queue: queue.Queue[models.Event] = queue.Queue()
         Threaded._QUEUES.append(self.queue)
 
     @staticmethod
-    def _listener(uri: str, qs: typing.List[queue.Queue]) -> None:
-        async def _consumer(uri: str, qs: typing.List[queue.Queue]) -> None:
+    def _listener(uri: str, qs: typing.List[queue.Queue[models.Event]]) -> None:
+        async def __listener(
+            uri: str, qs: typing.List[queue.Queue[models.Event]]
+        ) -> None:
             while True:
                 try:
                     async for ws in ws_connect(uri=uri):
@@ -57,10 +57,9 @@ class Threaded:
                             try:
                                 e = models.Event.load(msg)
                             except (json.decoder.JSONDecodeError, KeyError):
-                                logging.exception("unable to load/queue: %s", msg)
+                                logging.exception("Unable to load/queue: %s", msg)
                             else:
-                                for q in qs:
-                                    print(q)
+                                for q in qs.copy():
                                     q.put(e)
 
                 except Exception:
@@ -71,4 +70,4 @@ class Threaded:
         # This is a MUST, we don't want this event loop are attached
         # to PID's. We do not want any interference from
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(_consumer(uri, qs))
+        loop.run_until_complete(__listener(uri, qs))

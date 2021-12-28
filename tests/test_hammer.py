@@ -3,7 +3,6 @@ from concurrent.futures import (
     as_completed,
 )
 import datetime
-import time
 
 from core import (
     cache,
@@ -18,22 +17,11 @@ def work(until: datetime.timedelta = datetime.timedelta(seconds=5)):
             fn=lambda e: e.operation == "insert",
         )
     )
-    def slow1():
+    def slow():
         return datetime.datetime.now()
 
-    @cache(
-        strategy=strategies.Predicate(
-            uri="ws://0.0.0.0:4000",
-            fn=lambda e: e.operation == "insert",
-        )
-    )
-    def slow2():
-        return datetime.datetime.now()
-
-    while (
-        datetime.datetime.now() - slow1() < until and
-        datetime.datetime.now() - slow2() < until):
-        time.sleep(0.001)
+    while datetime.datetime.now() - slow() < until:
+        pass
 
 
 def test():

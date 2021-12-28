@@ -7,7 +7,7 @@ import typing
 @dataclasses.dataclass(frozen=True)
 class Event:
     operation: typing.Literal["insert", "update", "delete"]
-    extra: typing.Optional[typing.Any]
+    payload: typing.Optional[typing.Any]
     received_at: datetime.datetime
 
     @staticmethod
@@ -16,5 +16,5 @@ class Event:
         return Event(
             operation=p["operation"],
             received_at=datetime.datetime.now(),
-            extra=p.get("extra"),
+            payload=p.get("payload"),
         )
